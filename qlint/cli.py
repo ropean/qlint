@@ -7,6 +7,7 @@ import platform
 import subprocess
 import sys
 from collections import defaultdict
+from pathlib import Path
 
 from qlint import __version__
 from qlint.core.traversal import walk_codebase
@@ -22,7 +23,11 @@ from qlint.reports.report_html import generate_html
 
 
 def _results_dir() -> str:
-    return os.path.join(os.getcwd(), "scan_results")
+    downloads = Path.home() / "Downloads"
+    base = downloads if downloads.is_dir() else Path.home()
+    out = base / "qlint-reports"
+    out.mkdir(parents=True, exist_ok=True)
+    return str(out)
 
 
 def make_output_dir(target_path: str) -> str:
@@ -119,15 +124,24 @@ def print_summary(analysis: dict) -> None:
     print(f"{'=' * 50}\n")
 
 
+def _resolve_dir(raw: str) -> Path | None:
+    """Expand ~, normalise separators, resolve symlinks. Returns None if not a dir."""
+    try:
+        p = Path(raw.strip()).expanduser().resolve()
+        return p if p.is_dir() else None
+    except (ValueError, OSError):
+        return None
+
+
 def prompt_path() -> str:
     print("qlint — no path specified.")
     while True:
         raw = input("Enter directory to scan (or 'q' to quit): ").strip()
         if raw.lower() in ("q", "quit", "exit"):
             sys.exit(0)
-        path = os.path.expanduser(raw)
-        if os.path.isdir(path):
-            return path
+        p = _resolve_dir(raw)
+        if p:
+            return str(p)
         print(f"  Not a directory: '{raw}'. Please try again.")
 
 
@@ -166,10 +180,11 @@ examples:
     if not target:
         target = prompt_path()
     else:
-        target = os.path.expanduser(target)
-        if not os.path.isdir(target):
+        resolved = _resolve_dir(target)
+        if not resolved:
             print(f"qlint: '{target}' is not a directory", file=sys.stderr)
             sys.exit(1)
+        target = str(resolved)
 
     analysis = scan(target, verbose=args.verbose)
     print_summary(analysis)
@@ -179,8 +194,8 @@ examples:
         return
 
     out_dir = make_output_dir(target)
-    json_path = args.output or os.path.join(out_dir, "report.json")
-    html_path = args.html or os.path.join(out_dir, "report.html")
+    json_path = str(Path(args.output).expanduser().resolve()) if args.output else os.path.join(out_dir, "report.json")
+    html_path = str(Path(args.html).expanduser().resolve()) if args.html else os.path.join(out_dir, "report.html")
 
     generate_json(analysis, output_path=json_path)
     generate_html(analysis, output_path=html_path)
