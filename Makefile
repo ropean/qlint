@@ -11,3 +11,6 @@ lint:
 
 build:
 	python3 -m build
+
+publish: build
+	twine upload dist/*
