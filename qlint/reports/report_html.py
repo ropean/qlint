@@ -72,6 +72,34 @@ def _security_table(files: list[dict]) -> str:
     return f'<div class="bg-white rounded-xl shadow p-5 mb-6 overflow-x-auto"><h2 class="font-semibold text-gray-700 mb-3">Security Issues</h2><table class="w-full text-left"><thead>{header}</thead><tbody>{rows or empty}</tbody></table></div>'
 
 
+def _risk_table(analysis: dict) -> str:
+    summary = analysis.get("git_risk_summary", {})
+    if not summary.get("available"):
+        return ""
+    files = summary.get("top_risk_files", [])
+    if not files:
+        return ""
+    rows = ""
+    max_score = max(f["risk_score"] for f in files) or 1
+    for f in files:
+        pct = int(f["risk_score"] / max_score * 100)
+        bar_color = "#ef4444" if pct > 66 else "#f59e0b" if pct > 33 else "#22c55e"
+        bar = f'<div class="w-full bg-gray-100 rounded h-2"><div class="h-2 rounded" style="width:{pct}%;background:{bar_color}"></div></div>'
+        rows += (
+            f'<tr class="border-b hover:bg-gray-50">'
+            f'<td class="py-2 px-4 text-sm font-mono">{f["file"]}</td>'
+            f'<td class="py-2 px-4 text-sm text-right font-bold">{f["risk_score"]}</td>'
+            f'<td class="py-2 px-4 text-sm text-right">{f["commits"]}</td>'
+            f'<td class="py-2 px-4 text-sm text-right">{f["churn"]}</td>'
+            f'<td class="py-2 px-4 text-sm text-right">{f["authors"]}</td>'
+            f'<td class="py-2 px-4 text-sm text-right">{f["complexity"]}</td>'
+            f'<td class="py-2 px-4 w-32">{bar}</td>'
+            f"</tr>"
+        )
+    header = '<tr class="border-b-2 text-gray-600 text-sm"><th class="py-2 px-4">File</th><th class="py-2 px-4 text-right">Risk Score</th><th class="py-2 px-4 text-right">Commits</th><th class="py-2 px-4 text-right">Churn</th><th class="py-2 px-4 text-right">Authors</th><th class="py-2 px-4 text-right">Complexity</th><th class="py-2 px-4">Risk Bar</th></tr>'
+    return f'<div class="bg-white rounded-xl shadow p-5 mb-6 overflow-x-auto"><h2 class="font-semibold text-gray-700 mb-1">Predictive Risk — Top Files</h2><p class="text-xs text-gray-400 mb-3">risk = (complexity × churn) / authors</p><table class="w-full text-left"><thead>{header}</thead><tbody>{rows}</tbody></table></div>'
+
+
 def _prepare_chart_data(analysis: dict) -> dict:
     lang_data = analysis.get("languages", {})
     smells_by_type: dict[str, int] = {}
@@ -141,6 +169,7 @@ def generate_html(analysis: dict, output_path: str = None) -> str:
         + _files_table(files)
         + _complexity_table(files)
         + _security_table(files)
+        + _risk_table(analysis)
         + f"</div>{_chart_scripts(cd)}</body></html>"
     )
     if output_path:

@@ -16,6 +16,7 @@ from qlint.core.smells import analyze_smells
 from qlint.core.security import scan_security
 from qlint.core.duplicates import find_duplicates
 from qlint.core.quality import calculate_quality_score
+from qlint.core.git_risk import analyze_git_risk
 from qlint.reports.report_json import generate_json
 from qlint.reports.report_html import generate_html
 
@@ -65,6 +66,9 @@ def scan(root: str, verbose: bool = False) -> dict:
     print("Running duplication analysis...", file=sys.stderr)
     duplicates = find_duplicates(analyzed)
 
+    print("Analyzing git risk...", file=sys.stderr)
+    git_risk_summary = analyze_git_risk(os.path.abspath(root), analyzed)
+
     languages: dict = defaultdict(lambda: {"files": 0, "lines": 0})
     for f in analyzed:
         languages[f["language"]]["files"] += 1
@@ -84,6 +88,7 @@ def scan(root: str, verbose: bool = False) -> dict:
         "total_lines": total_lines,
         "languages": dict(languages),
         "duplicates": duplicates,
+        "git_risk_summary": git_risk_summary,
         "total_smells": sum(len(f.get("smells", [])) for f in analyzed),
         "total_security_issues": sum(
             len(f.get("security_issues", [])) for f in analyzed
