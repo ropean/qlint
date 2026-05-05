@@ -1,0 +1,187 @@
+"""qlint — multi-language code quality scanner."""
+
+import argparse
+import hashlib
+import os
+import platform
+import subprocess
+import sys
+from collections import defaultdict
+
+from qlint import __version__
+from qlint.core.traversal import walk_codebase
+from qlint.core.metrics import analyze_file
+from qlint.core.complexity import analyze_complexity
+from qlint.core.smells import analyze_smells
+from qlint.core.security import scan_security
+from qlint.core.duplicates import find_duplicates
+from qlint.core.quality import calculate_quality_score
+from qlint.reports.report_json import generate_json
+from qlint.reports.report_html import generate_html
+
+
+def _results_dir() -> str:
+    return os.path.join(os.getcwd(), "scan_results")
+
+
+def make_output_dir(target_path: str) -> str:
+    abs_path = os.path.abspath(target_path)
+    dirname = os.path.basename(abs_path.rstrip("/\\")) or "scan"
+    slug = "".join(c if c.isalnum() or c in "-" else "_" for c in dirname).strip("_")
+    short_hash = hashlib.sha1(abs_path.encode()).hexdigest()[:7]
+    out_dir = os.path.join(_results_dir(), f"{slug}_{short_hash}")
+    os.makedirs(out_dir, exist_ok=True)
+    return out_dir
+
+
+def open_file(path: str) -> None:
+    system = platform.system()
+    try:
+        if system == "Darwin":
+            subprocess.run(["open", path], check=False)
+        elif system == "Windows":
+            os.startfile(path)  # type: ignore[attr-defined]
+        else:
+            subprocess.run(["xdg-open", path], check=False)
+    except Exception:
+        pass
+
+
+def scan(root: str, verbose: bool = False) -> dict:
+    print(f"Scanning: {root}", file=sys.stderr)
+    raw_files = walk_codebase(root)
+    print(f"Found {len(raw_files)} files", file=sys.stderr)
+
+    analyzed = []
+    for file_info in raw_files:
+        if verbose:
+            print(f"  Analyzing: {file_info['relative_path']}", file=sys.stderr)
+        af = analyze_file(file_info)
+        af["complexity"] = analyze_complexity(af)
+        af["smells"] = analyze_smells(af)
+        af["security_issues"] = scan_security(af)
+        analyzed.append(af)
+
+    print("Running duplication analysis...", file=sys.stderr)
+    duplicates = find_duplicates(analyzed)
+
+    languages: dict = defaultdict(lambda: {"files": 0, "lines": 0})
+    for f in analyzed:
+        languages[f["language"]]["files"] += 1
+        languages[f["language"]]["lines"] += f["metrics"]["loc"]
+
+    total_files = len(analyzed)
+    total_lines = sum(f["metrics"]["loc"] for f in analyzed)
+    flagged = sum(f.get("complexity", {}).get("flagged_count", 0) for f in analyzed)
+    avg_c = sum(
+        f.get("complexity", {}).get("avg_complexity", 0) for f in analyzed
+    ) / max(total_files, 1)
+
+    analysis = {
+        "root": os.path.abspath(root),
+        "files": analyzed,
+        "total_files": total_files,
+        "total_lines": total_lines,
+        "languages": dict(languages),
+        "duplicates": duplicates,
+        "total_smells": sum(len(f.get("smells", [])) for f in analyzed),
+        "total_security_issues": sum(
+            len(f.get("security_issues", [])) for f in analyzed
+        ),
+        "complexity_summary": {
+            "flagged_count": flagged,
+            "avg_complexity": round(avg_c, 2),
+        },
+    }
+    analysis["quality"] = calculate_quality_score(analysis)
+    return analysis
+
+
+def print_summary(analysis: dict) -> None:
+    q = analysis["quality"]
+    print(f"\n{'=' * 50}")
+    print("  qlint — Code Quality Report")
+    print(f"{'=' * 50}")
+    print(f"  Grade:           {q['grade']} ({q['score']}/100)")
+    print(f"  Files:           {analysis['total_files']}")
+    print(f"  Total Lines:     {analysis['total_lines']:,}")
+    print(f"  Languages:       {', '.join(analysis['languages'].keys())}")
+    print(f"  Security Issues: {analysis['total_security_issues']}")
+    print(f"  Code Smells:     {analysis['total_smells']}")
+    print(
+        f"  Dup Blocks:      {analysis['duplicates'].get('total_duplicate_blocks', 0)}"
+    )
+    print(f"{'=' * 50}\n")
+
+
+def prompt_path() -> str:
+    print("qlint — no path specified.")
+    while True:
+        raw = input("Enter directory to scan (or 'q' to quit): ").strip()
+        if raw.lower() in ("q", "quit", "exit"):
+            sys.exit(0)
+        path = os.path.expanduser(raw)
+        if os.path.isdir(path):
+            return path
+        print(f"  Not a directory: '{raw}'. Please try again.")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="qlint",
+        description="qlint — multi-language code quality scanner",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""\
+examples:
+  qlint                        # interactive: prompts for path
+  qlint /path/to/repo          # scan and open HTML report
+  qlint /path/to/repo --no-open
+  qlint /path/to/repo --json-only
+  qlint /path/to/repo -v       # verbose per-file output
+        """,
+    )
+    parser.add_argument(
+        "path", nargs="?", help="Directory to scan (prompts if omitted)"
+    )
+    parser.add_argument("--output", "-o", help="Custom JSON output path")
+    parser.add_argument("--html", help="Custom HTML output path")
+    parser.add_argument(
+        "--json-only", action="store_true", help="Skip HTML, print JSON to stdout"
+    )
+    parser.add_argument(
+        "--no-open", action="store_true", help="Do not auto-open HTML report"
+    )
+    parser.add_argument(
+        "--verbose", "-v", action="store_true", help="Show per-file progress"
+    )
+    parser.add_argument("--version", action="version", version=f"qlint {__version__}")
+    args = parser.parse_args()
+
+    target = args.path
+    if not target:
+        target = prompt_path()
+    else:
+        target = os.path.expanduser(target)
+        if not os.path.isdir(target):
+            print(f"qlint: '{target}' is not a directory", file=sys.stderr)
+            sys.exit(1)
+
+    analysis = scan(target, verbose=args.verbose)
+    print_summary(analysis)
+
+    if args.json_only:
+        print(generate_json(analysis))
+        return
+
+    out_dir = make_output_dir(target)
+    json_path = args.output or os.path.join(out_dir, "report.json")
+    html_path = args.html or os.path.join(out_dir, "report.html")
+
+    generate_json(analysis, output_path=json_path)
+    generate_html(analysis, output_path=html_path)
+
+    print(f"JSON: {json_path}", file=sys.stderr)
+    print(f"HTML: {html_path}", file=sys.stderr)
+
+    if not args.no_open:
+        open_file(html_path)
