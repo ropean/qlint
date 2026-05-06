@@ -1,6 +1,6 @@
 # qlint
 
-Multi-language code quality scanner. Walks any codebase and produces JSON + HTML reports covering complexity, duplication, security, and code smells.
+Multi-language code quality scanner. Walks any codebase and produces JSON, HTML, and Markdown reports covering complexity, duplication, security, and code smells.
 
 ## Install
 
@@ -11,22 +11,26 @@ pip install -e .
 ## Usage
 
 ```bash
-qlint /path/to/repo          # scan and open HTML report
+qlint /path/to/repo                  # JSON + HTML + Markdown; auto-opens HTML
+qlint /path/to/repo --format md      # Markdown only
+qlint /path/to/repo --format json,md # JSON + Markdown, no HTML, no auto-open
 qlint /path/to/repo --no-open
-qlint /path/to/repo --json-only
-qlint /path/to/repo -v       # verbose per-file output
-qlint                        # interactive: prompts for path
+qlint /path/to/repo --json-only      # print JSON to stdout, no files
+qlint /path/to/repo -v               # verbose per-file output
+qlint                                # interactive: prompts for path
 ```
 
-Reports are written to `~/Downloads/qlint-reports/<repo>/`.
+Reports are written to `~/Downloads/qlint-reports/<repo>/` as `report.json`, `report.html`, and `report.md`. HTML auto-opens only when an HTML report is produced.
 
 ### Options
 
 | Flag | Description |
 |------|-------------|
-| `--output, -o` | Custom JSON output path |
-| `--html` | Custom HTML output path |
-| `--json-only` | Skip HTML, print JSON to stdout |
+| `--format, -f` | Comma-separated formats: `json`, `html`, `md` (default: all three) |
+| `--output, -o` | Custom JSON output path (implies `json`) |
+| `--html` | Custom HTML output path (implies `html`) |
+| `--md` | Custom Markdown output path (implies `md`) |
+| `--json-only` | Skip files, print JSON to stdout |
 | `--no-open` | Do not auto-open HTML report |
 | `--verbose, -v` | Show per-file progress |
 | `--version` | Show version |

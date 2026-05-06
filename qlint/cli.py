@@ -20,6 +20,7 @@ from qlint.core.quality import calculate_quality_score
 from qlint.core.git_risk import analyze_git_risk
 from qlint.reports.report_json import generate_json
 from qlint.reports.report_html import generate_html
+from qlint.reports.report_md import generate_md
 
 
 def _results_dir() -> str:
@@ -136,7 +137,11 @@ def _resolve_dir(raw: str) -> Path | None:
 def prompt_path() -> str:
     print("qlint — no path specified.")
     while True:
-        raw = input("Enter directory to scan (or 'q' to quit): ").strip()
+        try:
+            raw = input("Enter directory to scan (or 'q' to quit): ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\nqlint: cancelled", file=sys.stderr)
+            sys.exit(130)
         if raw.lower() in ("q", "quit", "exit"):
             sys.exit(0)
         p = _resolve_dir(raw)
@@ -145,7 +150,39 @@ def prompt_path() -> str:
         print(f"  Not a directory: '{raw}'. Please try again.")
 
 
+_VALID_FORMATS = {"json", "html", "md"}
+
+
+def _select_formats(args) -> set[str]:
+    selected: set[str] = set()
+    if args.format:
+        for token in args.format.replace(",", " ").split():
+            t = token.lower()
+            if t not in _VALID_FORMATS:
+                print(
+                    f"qlint: unknown format '{token}' (valid: json, html, md)",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
+            selected.add(t)
+    if args.output:
+        selected.add("json")
+    if args.html:
+        selected.add("html")
+    if args.md:
+        selected.add("md")
+    return selected or set(_VALID_FORMATS)
+
+
 def main() -> None:
+    try:
+        _run()
+    except KeyboardInterrupt:
+        print("\nqlint: cancelled", file=sys.stderr)
+        sys.exit(130)
+
+
+def _run() -> None:
     parser = argparse.ArgumentParser(
         prog="qlint",
         description="qlint — multi-language code quality scanner",
@@ -153,8 +190,9 @@ def main() -> None:
         epilog="""\
 examples:
   qlint                        # interactive: prompts for path
-  qlint /path/to/repo          # scan and open HTML report
-  qlint /path/to/repo --no-open
+  qlint /path/to/repo          # scan, write JSON+HTML+Markdown, open HTML
+  qlint /path/to/repo --format json,md
+  qlint /path/to/repo --html report.html
   qlint /path/to/repo --json-only
   qlint /path/to/repo -v       # verbose per-file output
         """,
@@ -164,8 +202,14 @@ examples:
     )
     parser.add_argument("--output", "-o", help="Custom JSON output path")
     parser.add_argument("--html", help="Custom HTML output path")
+    parser.add_argument("--md", help="Custom Markdown output path")
     parser.add_argument(
-        "--json-only", action="store_true", help="Skip HTML, print JSON to stdout"
+        "--format",
+        "-f",
+        help="Comma-separated formats to emit: json,html,md (default: all)",
+    )
+    parser.add_argument(
+        "--json-only", action="store_true", help="Skip files, print JSON to stdout"
     )
     parser.add_argument(
         "--no-open", action="store_true", help="Do not auto-open HTML report"
@@ -193,15 +237,22 @@ examples:
         print(generate_json(analysis))
         return
 
+    formats = _select_formats(args)
+
     out_dir = make_output_dir(target)
     json_path = str(Path(args.output).expanduser().resolve()) if args.output else os.path.join(out_dir, "report.json")
     html_path = str(Path(args.html).expanduser().resolve()) if args.html else os.path.join(out_dir, "report.html")
+    md_path = str(Path(args.md).expanduser().resolve()) if args.md else os.path.join(out_dir, "report.md")
 
-    generate_json(analysis, output_path=json_path)
-    generate_html(analysis, output_path=html_path)
+    if "json" in formats:
+        generate_json(analysis, output_path=json_path)
+        print(f"JSON: {json_path}", file=sys.stderr)
+    if "html" in formats:
+        generate_html(analysis, output_path=html_path)
+        print(f"HTML: {html_path}", file=sys.stderr)
+    if "md" in formats:
+        generate_md(analysis, output_path=md_path)
+        print(f"MD:   {md_path}", file=sys.stderr)
 
-    print(f"JSON: {json_path}", file=sys.stderr)
-    print(f"HTML: {html_path}", file=sys.stderr)
-
-    if not args.no_open:
+    if "html" in formats and not args.no_open:
         open_file(html_path)
