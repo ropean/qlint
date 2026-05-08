@@ -1,9 +1,13 @@
+import re
 import subprocess
+import time
 from pathlib import Path
+
+BUG_FIX_PATTERN = re.compile(r"\b(fix|bug|hotfix|patch|revert)\b", re.IGNORECASE)
 
 
 def _run(cmd: list[str], cwd: str) -> str:
-    result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=30)
+    result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=60)
     return result.stdout if result.returncode == 0 else ""
 
 
@@ -12,88 +16,190 @@ def _is_git_repo(root: str) -> bool:
     return out.strip() == "true"
 
 
-def _parse_git_log(root: str) -> dict[str, dict]:
-    """One git log pass → per-file {commits, churn, authors}."""
+def _parse_git_log(root: str, window_days: int) -> dict[str, dict]:
     out = _run(
-        ["git", "log", "--numstat", "--format=AUTHOR:%ae", "--diff-filter=ACDMR"],
+        [
+            "git",
+            "log",
+            "--numstat",
+            "--format=COMMIT:%at|%ae|%s",
+            "--diff-filter=ACDMR",
+        ],
         root,
     )
+    cutoff = int(time.time()) - window_days * 86400
     stats: dict[str, dict] = {}
-    current_author = ""
+    cur_author = ""
+    cur_is_fix = False
+    cur_in_window = False
     for raw in out.splitlines():
         line = raw.strip()
         if not line:
             continue
-        if line.startswith("AUTHOR:"):
-            current_author = line[7:]
+        if line.startswith("COMMIT:"):
+            parts = line[7:].split("|", 2)
+            if len(parts) != 3:
+                continue
+            ts_s, author, subject = parts
+            try:
+                ts = int(ts_s)
+            except ValueError:
+                ts = 0
+            cur_author = author
+            cur_is_fix = bool(BUG_FIX_PATTERN.search(subject))
+            cur_in_window = ts >= cutoff
             continue
         parts = line.split("\t")
         if len(parts) != 3:
             continue
         added_s, deleted_s, filepath = parts
-        # Skip binary files (git outputs "-" for binary diffs)
         if added_s == "-" or deleted_s == "-":
             continue
         try:
             churn = int(added_s) + int(deleted_s)
         except ValueError:
             continue
-        # Normalise to forward slashes so it matches relative_path from traversal
         filepath = Path(filepath).as_posix()
-        if filepath not in stats:
-            stats[filepath] = {"commits": 0, "churn": 0, "authors": set()}
-        stats[filepath]["commits"] += 1
-        stats[filepath]["churn"] += churn
-        stats[filepath]["authors"].add(current_author)
+        s = stats.setdefault(
+            filepath,
+            {
+                "all_commits": 0,
+                "all_churn": 0,
+                "authors": set(),
+                "recent_commits": 0,
+                "recent_churn": 0,
+                "bug_fix_commits": 0,
+            },
+        )
+        s["all_commits"] += 1
+        s["all_churn"] += churn
+        s["authors"].add(cur_author)
+        if cur_in_window:
+            s["recent_commits"] += 1
+            s["recent_churn"] += churn
+            if cur_is_fix:
+                s["bug_fix_commits"] += 1
+    return stats
 
-    # Freeze author sets to counts
-    return {
-        fp: {
-            "commits": v["commits"],
-            "churn": v["churn"],
-            "authors": len(v["authors"]),
-        }
-        for fp, v in stats.items()
-    }
+
+def _risk_score(
+    complexity: float, recent_churn: int, bug_fix_ratio: float, authors: int
+) -> float:
+    base = recent_churn * complexity
+    multiplier = (1.0 + 2.0 * bug_fix_ratio) * (1.0 + 0.15 * authors)
+    return round(base * multiplier / 100.0, 2)
 
 
-def _risk_score(complexity: float, churn: int, authors: int) -> float:
-    return round((complexity * churn) / max(authors, 1), 2)
+def _risk_level(score: float) -> str:
+    if score >= 50:
+        return "critical"
+    if score >= 20:
+        return "high"
+    if score >= 5:
+        return "medium"
+    return "low"
 
 
-def analyze_git_risk(root: str, analyzed_files: list[dict]) -> dict:
+def _reasons(signals: dict) -> list[str]:
+    out: list[str] = []
+    bfr = signals["bug_fix_ratio"]
+    rc = signals["recent_churn"]
+    cx = signals["complexity"]
+    auth = signals["authors"]
+    sm = signals.get("smells", 0)
+    sec = signals.get("security_issues", 0)
+    if bfr >= 0.3:
+        out.append(f"{int(bfr * 100)}% of recent commits are bug fixes")
+    if rc > 100 and cx >= 10:
+        out.append(f"high churn ({rc} lines / window) with complexity {cx}")
+    elif rc > 50:
+        out.append(f"active churn ({rc} lines / window)")
+    if auth >= 4:
+        out.append(f"{auth} authors → coordination cost")
+    if sec > 0:
+        out.append(f"{sec} security issue(s) in this file")
+    if sm >= 3:
+        out.append(f"{sm} code smells flagged")
+    if not out:
+        out.append("baseline risk only")
+    return out
+
+
+def analyze_git_risk(
+    root: str, analyzed_files: list[dict], window_days: int = 90
+) -> dict:
     if not _is_git_repo(root):
-        return {"available": False, "top_risk_files": []}
+        return {
+            "available": False,
+            "window_days": window_days,
+            "top_risk_files": [],
+        }
 
-    git_stats = _parse_git_log(root)
+    git_stats = _parse_git_log(root, window_days)
 
     for af in analyzed_files:
         rel = Path(af["relative_path"]).as_posix()
-        gs = git_stats.get(rel, {"commits": 0, "churn": 0, "authors": 1})
+        gs = git_stats.get(rel)
         complexity = af.get("complexity", {}).get("avg_complexity", 1) or 1
+        if gs is None:
+            authors = 1
+            all_commits = 0
+            all_churn = 0
+            recent_commits = 0
+            recent_churn = 0
+            bug_fix_commits = 0
+        else:
+            authors = len(gs["authors"])
+            all_commits = gs["all_commits"]
+            all_churn = gs["all_churn"]
+            recent_commits = gs["recent_commits"]
+            recent_churn = gs["recent_churn"]
+            bug_fix_commits = gs["bug_fix_commits"]
+        bug_fix_ratio = (
+            bug_fix_commits / recent_commits if recent_commits else 0.0
+        )
+        score = _risk_score(complexity, recent_churn, bug_fix_ratio, authors)
+        signals = {
+            "complexity": complexity,
+            "recent_commits": recent_commits,
+            "recent_churn": recent_churn,
+            "all_time_commits": all_commits,
+            "all_time_churn": all_churn,
+            "authors": authors,
+            "bug_fix_ratio": round(bug_fix_ratio, 2),
+            "smells": len(af.get("smells", [])),
+            "security_issues": len(af.get("security_issues", [])),
+        }
         af["git_risk"] = {
-            "commits": gs["commits"],
-            "churn": gs["churn"],
-            "authors": gs["authors"],
-            "risk_score": _risk_score(complexity, gs["churn"], gs["authors"]),
+            "commits": all_commits,
+            "churn": all_churn,
+            "authors": authors,
+            "risk_score": score,
+            "risk_level": _risk_level(score),
+            "signals": signals,
+            "reasons": _reasons(signals),
         }
 
     ranked = sorted(
-        [f for f in analyzed_files if f["git_risk"]["churn"] > 0],
+        [f for f in analyzed_files if f["git_risk"]["signals"]["all_time_commits"] > 0],
         key=lambda f: f["git_risk"]["risk_score"],
         reverse=True,
     )[:10]
 
     return {
         "available": True,
+        "window_days": window_days,
         "top_risk_files": [
             {
                 "file": f["relative_path"],
                 "risk_score": f["git_risk"]["risk_score"],
-                "commits": f["git_risk"]["commits"],
-                "churn": f["git_risk"]["churn"],
-                "authors": f["git_risk"]["authors"],
-                "complexity": f.get("complexity", {}).get("avg_complexity", 0),
+                "risk_level": f["git_risk"]["risk_level"],
+                "signals": f["git_risk"]["signals"],
+                "reasons": f["git_risk"]["reasons"],
+                "commits": f["git_risk"]["signals"]["all_time_commits"],
+                "churn": f["git_risk"]["signals"]["all_time_churn"],
+                "authors": f["git_risk"]["signals"]["authors"],
+                "complexity": f["git_risk"]["signals"]["complexity"],
             }
             for f in ranked
         ],

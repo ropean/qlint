@@ -54,7 +54,7 @@ def open_file(path: str) -> None:
         pass
 
 
-def scan(root: str, verbose: bool = False) -> dict:
+def scan(root: str, verbose: bool = False, risk_window_days: int = 90) -> dict:
     print(f"Scanning: {root}", file=sys.stderr)
     raw_files = walk_codebase(root)
     print(f"Found {len(raw_files)} files", file=sys.stderr)
@@ -73,7 +73,9 @@ def scan(root: str, verbose: bool = False) -> dict:
     duplicates = find_duplicates(analyzed)
 
     print("Analyzing git risk...", file=sys.stderr)
-    git_risk_summary = analyze_git_risk(os.path.abspath(root), analyzed)
+    git_risk_summary = analyze_git_risk(
+        os.path.abspath(root), analyzed, window_days=risk_window_days
+    )
 
     languages: dict = defaultdict(lambda: {"files": 0, "lines": 0})
     for f in analyzed:
@@ -123,6 +125,47 @@ def print_summary(analysis: dict) -> None:
         f"  Dup Blocks:      {analysis['duplicates'].get('total_duplicate_blocks', 0)}"
     )
     print(f"{'=' * 50}\n")
+
+
+_LEVEL_TAG = {
+    "critical": "[CRITICAL]",
+    "high":     "[ HIGH   ]",
+    "medium":   "[ MEDIUM ]",
+    "low":      "[ LOW    ]",
+}
+
+
+def print_risk_narrative(analysis: dict, top_n: int = 5) -> None:
+    summary = analysis.get("git_risk_summary", {})
+    if not summary.get("available"):
+        print("\nGit risk: not available (not a git repo or no history)\n")
+        return
+    files = summary.get("top_risk_files", [])
+    window = summary.get("window_days", 90)
+    print(f"\n{'=' * 60}")
+    print(f"  Predictive Risk Report — last {window} days")
+    print(f"{'=' * 60}")
+    if not files:
+        print("  No file activity in window. Nothing to flag.\n")
+        return
+    print(f"  Top {min(top_n, len(files))} files most likely to cause your next outage:\n")
+    for idx, f in enumerate(files[:top_n], 1):
+        tag = _LEVEL_TAG.get(f["risk_level"], "[ ?      ]")
+        print(f"  {idx}. {tag}  {f['file']}")
+        print(f"     risk score: {f['risk_score']}")
+        for reason in f["reasons"]:
+            print(f"       • {reason}")
+        s = f["signals"]
+        print(
+            f"     signals: complexity={s['complexity']}  "
+            f"recent_commits={s['recent_commits']}  "
+            f"recent_churn={s['recent_churn']}  "
+            f"bug_fix_ratio={s['bug_fix_ratio']}  "
+            f"authors={s['authors']}  "
+            f"smells={s['smells']}  "
+            f"security={s['security_issues']}"
+        )
+        print()
 
 
 def _resolve_dir(raw: str) -> Path | None:
@@ -215,6 +258,26 @@ examples:
         "--no-open", action="store_true", help="Do not auto-open HTML report"
     )
     parser.add_argument(
+        "--risk",
+        action="store_true",
+        help="Print predictive risk report (top 5 files most likely to break)",
+    )
+    parser.add_argument(
+        "--risk-window",
+        type=int,
+        default=90,
+        help="Days of git history to consider as 'recent' for risk (default: 90)",
+    )
+    parser.add_argument(
+        "--risk-md",
+        help="Write standalone risk markdown report to PATH",
+    )
+    parser.add_argument(
+        "--summary",
+        action="store_true",
+        help="Print summary block (default when no --risk/--json-only)",
+    )
+    parser.add_argument(
         "--verbose", "-v", action="store_true", help="Show per-file progress"
     )
     parser.add_argument("--version", action="version", version=f"qlint {__version__}")
@@ -230,11 +293,21 @@ examples:
             sys.exit(1)
         target = str(resolved)
 
-    analysis = scan(target, verbose=args.verbose)
+    analysis = scan(target, verbose=args.verbose, risk_window_days=args.risk_window)
     print_summary(analysis)
+
+    if args.risk:
+        print_risk_narrative(analysis)
 
     if args.json_only:
         print(generate_json(analysis))
+        return
+
+    explicit_format = bool(
+        args.format or args.output or args.html or args.md or args.risk_md
+    )
+    risk_only = args.risk and not explicit_format
+    if risk_only:
         return
 
     formats = _select_formats(args)
@@ -243,6 +316,9 @@ examples:
     json_path = str(Path(args.output).expanduser().resolve()) if args.output else os.path.join(out_dir, "report.json")
     html_path = str(Path(args.html).expanduser().resolve()) if args.html else os.path.join(out_dir, "report.html")
     md_path = str(Path(args.md).expanduser().resolve()) if args.md else os.path.join(out_dir, "report.md")
+    risk_md_path = (
+        str(Path(args.risk_md).expanduser().resolve()) if args.risk_md else None
+    )
 
     if "json" in formats:
         generate_json(analysis, output_path=json_path)
@@ -253,6 +329,10 @@ examples:
     if "md" in formats:
         generate_md(analysis, output_path=md_path)
         print(f"MD:   {md_path}", file=sys.stderr)
+    if risk_md_path:
+        from qlint.reports.report_risk_md import generate_risk_md
+        generate_risk_md(analysis, output_path=risk_md_path)
+        print(f"RISK: {risk_md_path}", file=sys.stderr)
 
-    if "html" in formats and not args.no_open:
+    if "html" in formats and not args.no_open and not args.risk:
         open_file(html_path)

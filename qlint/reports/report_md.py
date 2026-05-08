@@ -110,8 +110,10 @@ def _git_risk(analysis: dict) -> str:
     files = summary.get("top_risk_files", [])
     if not files:
         return ""
+    window = summary.get("window_days", 90)
     body = (
-        "_Risk = (complexity × churn) / authors_\n\n"
+        f"_Risk = recent_churn × complexity × (1 + 2·bug_fix_ratio) × "
+        f"(1 + 0.15·authors) / 100  · window: {window}d_\n\n"
         "| File | Risk | Commits | Churn | Authors | Complexity |\n"
         "| --- | ---: | ---: | ---: | ---: | ---: |\n"
     )
