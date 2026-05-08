@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>qlint — Multi-language Code Quality Scanner</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3QgeD0iMiIgeT0iMiIgd2lkdGg9IjYwIiBoZWlnaHQ9IjYwIiByeD0iMTQiIGZpbGw9IiMwYTBhMGEiLz48cmVjdCB4PSIyIiB5PSIyIiB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHJ4PSIxNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjM2I5ZWZmIiBzdHJva2Utd2lkdGg9IjEuNSIgc3Ryb2tlLW9wYWNpdHk9IjAuNTUiLz48dGV4dCB4PSIzMiIgeT0iNDAiIGZvbnQtZmFtaWx5PSJHZW9yZ2lhLCBzZXJpZiIgZm9udC1zaXplPSI0MiIgZm9udC13ZWlnaHQ9IjQwMCIgZmlsbD0iI2YwZjBmMCIgdGV4dC1hbmNob3I9Im1pZGRsZSI+cTwvdGV4dD48L3N2Zz4=">
+<script>
+(function(){
+  try {
+    var saved = localStorage.getItem('qlint-theme');
+    var sys = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', saved || sys);
+  } catch(e) { document.documentElement.setAttribute('data-theme', 'dark'); }
+})();
+</script>
+<style>
+*,*::before,*::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+html { color-scheme: dark; }
+html[data-theme="light"] { color-scheme: light; }
+
+:root, [data-theme="dark"] {
+  --bg: #000000;
+  --bg-card: rgba(255, 255, 255, 0.018);
+  --bg-hover: rgba(255, 255, 255, 0.04);
+  --bg-code: #0a0d12;
+  --text: #f0f0f0;
+  --text-muted: #a1a4a5;
+  --text-faint: #5c5c5c;
+  --border: rgba(214, 235, 253, 0.19);
+  --border-soft: rgba(217, 237, 254, 0.10);
+  --orange: #ff801f;
+  --orange-bg: rgba(255, 89, 0, 0.18);
+  --green: #11ff99;
+  --green-bg: rgba(17, 255, 153, 0.14);
+  --blue: #3b9eff;
+  --blue-bg: rgba(0, 117, 255, 0.20);
+  --yellow: #ffc53d;
+  --yellow-bg: rgba(255, 197, 61, 0.18);
+  --red: #ff5c79;
+  --red-bg: rgba(255, 32, 71, 0.20);
+}
+[data-theme="light"] {
+  --bg: #fafbfc;
+  --bg-card: #ffffff;
+  --bg-hover: #f4f6f8;
+  --bg-code: #f4f6f8;
+  --text: #0a0e1a;
+  --text-muted: #5c6166;
+  --text-faint: #9aa0a6;
+  --border: rgba(15, 32, 64, 0.12);
+  --border-soft: rgba(15, 32, 64, 0.06);
+  --orange: #d96b0f;
+  --orange-bg: rgba(217, 107, 15, 0.10);
+  --green: #00a86b;
+  --green-bg: rgba(0, 168, 107, 0.12);
+  --blue: #0975ff;
+  --blue-bg: rgba(9, 117, 255, 0.10);
+  --yellow: #c89a00;
+  --yellow-bg: rgba(255, 197, 61, 0.20);
+  --red: #d8264a;
+  --red-bg: rgba(216, 38, 74, 0.10);
+}
+
+body {
+  background: var(--bg); color: var(--text);
+  font: 400 16px/1.5 "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+  transition: background .18s ease, color .18s ease;
+  min-height: 100vh;
+}
+
+.shell { max-width: 1200px; margin: 0 auto; padding: 56px 32px 96px; }
+
+/* Nav */
+.nav {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-bottom: 56px; border-bottom: 1px solid var(--border);
+  margin-bottom: 80px;
+}
+.brand {
+  display: inline-flex; align-items: center;
+  font-family: "Iowan Old Style", "Apple Garamond", Baskerville, serif;
+  font-size: 28px; line-height: 1; letter-spacing: -0.03em; font-weight: 400;
+  color: var(--text); text-decoration: none;
+}
+.nav-links { display: flex; gap: 6px; align-items: center; }
+.pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 7px 16px; border: 1px solid var(--border); border-radius: 9999px;
+  background: transparent; color: var(--text); font-size: 13px; font-weight: 500;
+  text-decoration: none; cursor: pointer;
+  transition: background .15s, border-color .15s; font-family: inherit;
+}
+.pill:hover { background: var(--bg-hover); }
+.pill.solid { background: var(--text); color: var(--bg); border-color: var(--text); }
+.pill.solid:hover { background: var(--bg-hover); color: var(--text); }
+.pill .icon { width: 14px; height: 14px; display: inline-block; }
+[data-theme="dark"] .moon { display: none; }
+[data-theme="light"] .sun { display: none; }
+
+/* Hero */
+.hero { padding: 16px 0 96px; max-width: 880px; }
+.hero h1 {
+  font-family: "Iowan Old Style", "Apple Garamond", Baskerville, "Times New Roman", serif;
+  font-size: clamp(48px, 8vw, 96px); line-height: 1.0;
+  letter-spacing: -0.04em; font-weight: 400; margin: 0 0 24px;
+}
+.hero .lede {
+  font-size: clamp(18px, 2vw, 22px); line-height: 1.5;
+  color: var(--text-muted); margin: 0 0 36px; max-width: 720px;
+}
+.hero .accent { color: var(--text); }
+.hero-cta { display: flex; gap: 12px; flex-wrap: wrap; }
+
+/* Sections */
+.section { margin-bottom: 96px; }
+.section-eyebrow {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em;
+  color: var(--text-muted); font-weight: 600; margin: 0 0 16px;
+}
+.section-title {
+  font-family: "Iowan Old Style", Baskerville, serif;
+  font-size: clamp(32px, 4.5vw, 48px); line-height: 1.05;
+  letter-spacing: -0.025em; font-weight: 400; margin: 0 0 16px;
+}
+.section-lede {
+  font-size: 17px; color: var(--text-muted);
+  max-width: 720px; line-height: 1.55; margin: 0 0 36px;
+}
+
+/* Cards */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.grid-features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+
+.card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 16px; padding: 28px;
+}
+.card h3 {
+  font-size: 19px; font-weight: 500; line-height: 1.3;
+  margin: 0 0 8px; letter-spacing: -0.01em;
+}
+.card p { font-size: 14px; color: var(--text-muted); line-height: 1.6; margin: 0; }
+.card .tag {
+  display: inline-flex; align-items: center; padding: 3px 10px;
+  border-radius: 9999px; font-size: 11px; font-weight: 600;
+  letter-spacing: 0.05em; text-transform: uppercase;
+  margin-bottom: 16px; line-height: 1.4;
+}
+.tag.complexity { background: var(--blue-bg); color: var(--blue); }
+.tag.duplication { background: var(--orange-bg); color: var(--orange); }
+.tag.security { background: var(--red-bg); color: var(--red); }
+.tag.smells { background: var(--yellow-bg); color: var(--yellow); }
+.tag.risk { background: var(--green-bg); color: var(--green); }
+.tag.skill { background: var(--blue-bg); color: var(--blue); }
+
+/* Code */
+.code {
+  font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace;
+  background: var(--bg-code); border: 1px solid var(--border-soft);
+  border-radius: 10px; padding: 14px 16px;
+  font-size: 13px; line-height: 1.6; color: var(--text);
+  overflow-x: auto; white-space: pre;
+  position: relative;
+}
+.code .comment { color: var(--text-faint); }
+.code .flag { color: var(--blue); }
+.code .str { color: var(--green); }
+.code-block + .code-block { margin-top: 12px; }
+.code-block .label {
+  font-size: 12px; color: var(--text-muted); margin: 0 0 8px;
+  text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;
+}
+.copy-btn {
+  position: absolute; top: 8px; right: 8px; padding: 4px 10px;
+  font-size: 11px; font-weight: 500; border: 1px solid var(--border);
+  background: var(--bg); color: var(--text-muted); border-radius: 9999px;
+  cursor: pointer; opacity: 0; transition: opacity .15s, color .15s;
+  font-family: inherit;
+}
+.code-block:hover .copy-btn { opacity: 1; }
+.copy-btn:hover { color: var(--text); }
+.copy-btn.copied { color: var(--green); border-color: var(--green); }
+
+/* Inline code */
+code.inline {
+  font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.92em;
+  background: var(--bg-code); border: 1px solid var(--border-soft);
+  border-radius: 4px; padding: 1px 6px;
+}
+
+/* Predictive risk highlight */
+.formula-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 16px; padding: 36px; text-align: center;
+}
+.formula {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: clamp(14px, 1.5vw, 18px); color: var(--text);
+  margin: 0 0 16px; line-height: 1.6;
+}
+.formula .var { color: var(--blue); }
+.formula-note { color: var(--text-muted); font-size: 14px; margin: 0; }
+
+.signal-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+  margin-top: 28px;
+}
+.signal {
+  background: var(--bg-card); border: 1px solid var(--border-soft);
+  border-radius: 10px; padding: 16px; text-align: left;
+}
+.signal .name {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 12px; color: var(--blue); margin-bottom: 6px;
+}
+.signal .desc { font-size: 13px; color: var(--text-muted); line-height: 1.45; }
+
+/* Skill */
+.skill-flow {
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;
+  margin-top: 28px;
+}
+.skill-step {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 18px;
+  position: relative;
+}
+.skill-step .num {
+  font-family: "Iowan Old Style", serif;
+  font-size: 24px; color: var(--blue); margin-bottom: 8px; line-height: 1;
+}
+.skill-step .what {
+  font-size: 13px; line-height: 1.5; color: var(--text-muted);
+}
+.activation {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px;
+}
+.activation .phrase {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 12px; padding: 4px 10px;
+  background: var(--bg-code); border: 1px solid var(--border-soft);
+  border-radius: 9999px; color: var(--text);
+}
+
+/* Outputs split */
+.outputs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.output-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 16px; padding: 28px; display: flex; flex-direction: column;
+}
+.output-card .badge-format {
+  display: inline-flex; align-self: flex-start;
+  padding: 4px 12px; border-radius: 9999px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+  text-transform: uppercase; margin-bottom: 16px;
+  border: 1px solid var(--border);
+}
+.output-card h3 {
+  font-size: 22px; font-weight: 500; margin: 0 0 8px; letter-spacing: -0.01em;
+  font-family: "Iowan Old Style", Baskerville, serif; font-weight: 400;
+}
+.output-card p { font-size: 14px; color: var(--text-muted); margin: 0 0 20px; flex: 1; }
+.output-card .preview {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 11px; color: var(--text-faint); line-height: 1.5;
+  background: var(--bg-code); border: 1px solid var(--border-soft);
+  border-radius: 8px; padding: 12px; overflow-x: auto; white-space: pre;
+}
+
+/* Footer */
+footer {
+  border-top: 1px solid var(--border); padding-top: 32px;
+  display: flex; flex-wrap: wrap; gap: 24px; align-items: center; justify-content: space-between;
+  font-size: 13px; color: var(--text-muted);
+}
+footer a { color: var(--text-muted); text-decoration: none; margin-right: 16px; }
+footer a:hover { color: var(--text); }
+
+@media (max-width: 1000px) {
+  .grid-features, .outputs, .grid-3 { grid-template-columns: repeat(2, 1fr); }
+  .skill-flow { grid-template-columns: repeat(2, 1fr); }
+  .signal-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 600px) {
+  .shell { padding: 32px 16px 64px; }
+  .nav { padding-bottom: 32px; margin-bottom: 48px; }
+  .grid-2, .grid-features, .outputs, .grid-3, .skill-flow, .signal-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- Nav -->
+  <nav class="nav">
+    <a class="brand" href="#" aria-label="qlint home">
+      <span>qlint</span>
+    </a>
+    <div class="nav-links">
+      <a class="pill" href="https://github.com/ropean/qlint" target="_blank" rel="noopener">GitHub</a>
+      <a class="pill" href="https://pypi.org/project/qlint/" target="_blank" rel="noopener">PyPI</a>
+      <button class="pill theme-toggle" type="button" aria-label="Toggle theme">
+        <svg class="icon sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        <svg class="icon moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <span>Theme</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <h1>Code quality<br><span class="accent">that predicts</span> your next outage.</h1>
+    <p class="lede">
+      qlint is a multi-language scanner that walks any codebase and produces JSON, HTML,
+      and Markdown reports. Beyond complexity and duplication, it cross-references git
+      history to surface the files most likely to break next.
+    </p>
+    <div class="hero-cta">
+      <a class="pill solid" href="#install">Install</a>
+      <a class="pill" href="#usage">See usage</a>
+      <a class="pill" href="#risk">How predictive risk works</a>
+    </div>
+  </section>
+
+  <!-- Install -->
+  <section id="install" class="section">
+    <p class="section-eyebrow">Install</p>
+    <h2 class="section-title">Two ways to start.</h2>
+    <p class="section-lede">Pick PyPI for a one-shot install, or clone the source if you want to hack.</p>
+    <div class="grid-2">
+      <div class="code-block">
+        <p class="label">From PyPI</p>
+        <pre class="code"><button class="copy-btn" data-copy="pip install qlint" type="button">Copy</button><span class="comment"># latest release</span>
+pip install qlint</pre>
+      </div>
+      <div class="code-block">
+        <p class="label">From source</p>
+        <pre class="code"><button class="copy-btn" data-copy="git clone https://github.com/ropean/qlint.git&#10;cd qlint&#10;pip install -e ." type="button">Copy</button>git clone https://github.com/ropean/qlint.git
+cd qlint
+pip install -e .</pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section id="features" class="section">
+    <p class="section-eyebrow">Analysis features</p>
+    <h2 class="section-title">Five signals, one grade.</h2>
+    <p class="section-lede">Every scan combines five independent analyses into a single quality score from 0 to 100. Each signal has its own report section.</p>
+    <div class="grid-features">
+      <div class="card">
+        <span class="tag complexity">Complexity</span>
+        <h3>Cyclomatic complexity</h3>
+        <p>Per-function complexity scores. Anything above 10 is flagged. Top offenders surface in the high-complexity table.</p>
+      </div>
+      <div class="card">
+        <span class="tag duplication">Duplication</span>
+        <h3>Cross-file duplicate blocks</h3>
+        <p>Hash-based 6-line block detection across the whole codebase. Reports total blocks plus duplication percentage.</p>
+      </div>
+      <div class="card">
+        <span class="tag security">Security</span>
+        <h3>Secrets &amp; danger zones</h3>
+        <p>Hardcoded credentials, dangerous calls (<code class="inline">eval</code>, <code class="inline">exec</code>, …), severity-ranked.</p>
+      </div>
+      <div class="card">
+        <span class="tag smells">Code Smells</span>
+        <h3>Structural smells</h3>
+        <p>Long functions, deep nesting, long parameter lists. Tracked by type so you can see what kind of debt dominates.</p>
+      </div>
+      <div class="card">
+        <span class="tag risk">Predictive Risk</span>
+        <h3>Files most likely to break</h3>
+        <p>Recency-weighted risk that fuses static metrics with git history — recent churn, bug-fix ratio, author count.</p>
+      </div>
+      <div class="card">
+        <span class="tag skill">Skill</span>
+        <h3>qlint-refactor for Claude Code</h3>
+        <p>A packaged skill that drives a behavior-preserving refactor loop, using <code class="inline">risk_score</code> as the success signal.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Usage -->
+  <section id="usage" class="section">
+    <p class="section-eyebrow">Usage</p>
+    <h2 class="section-title">A few flags. A lot of output.</h2>
+    <p class="section-lede">Default scan emits all three formats and auto-opens the HTML. Drop in flags to narrow it down or to dive into the predictive risk view.</p>
+
+    <div class="grid-2" style="grid-template-columns: 1.1fr 0.9fr;">
+      <div class="code-block">
+        <p class="label">Common scans</p>
+        <pre class="code"><button class="copy-btn" data-copy="qlint /path/to/repo" type="button">Copy</button><span class="comment"># scan, write JSON+HTML+Markdown, open HTML</span>
+qlint /path/to/repo
+
+<span class="comment"># Markdown only</span>
+qlint /path/to/repo <span class="flag">--format</span> md
+
+<span class="comment"># custom HTML output path</span>
+qlint /path/to/repo <span class="flag">--html</span> report.html
+
+<span class="comment"># prompt for path interactively</span>
+qlint</pre>
+      </div>
+      <div class="code-block">
+        <p class="label">Predictive risk</p>
+        <pre class="code"><button class="copy-btn" data-copy="qlint . --risk" type="button">Copy</button><span class="comment"># top 5 narrative on stdout</span>
+qlint . <span class="flag">--risk</span>
+
+<span class="comment"># focus on the last 30 days</span>
+qlint . <span class="flag">--risk</span> <span class="flag">--risk-window</span> 30
+
+<span class="comment"># standalone risk markdown file</span>
+qlint . <span class="flag">--risk-md</span> /tmp/risk.md</pre>
+      </div>
+    </div>
+
+    <div class="grid-2" style="grid-template-columns: 1fr 1fr; margin-top: 16px;">
+      <div class="code-block">
+        <p class="label">Pipe to other tools</p>
+        <pre class="code"><button class="copy-btn" data-copy="qlint . --json-only | jq '.gitRisk.top_risk_files[0]'" type="button">Copy</button><span class="comment"># JSON to stdout, no files written</span>
+qlint . <span class="flag">--json-only</span> | jq <span class="str">'.gitRisk.top_risk_files[0]'</span></pre>
+      </div>
+      <div class="code-block">
+        <p class="label">Verbose</p>
+        <pre class="code"><button class="copy-btn" data-copy="qlint . -v --no-open" type="button">Copy</button><span class="comment"># per-file progress, don't auto-open HTML</span>
+qlint . <span class="flag">-v</span> <span class="flag">--no-open</span></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- Outputs -->
+  <section id="outputs" class="section">
+    <p class="section-eyebrow">Output formats</p>
+    <h2 class="section-title">Same data, three voices.</h2>
+    <p class="section-lede">Reports default to <code class="inline">~/Downloads/qlint-reports/&lt;repo&gt;-&lt;hash&gt;/report-MMDDYY.{json,html,md}</code> so each run is timestamped and never overwrites the previous one.</p>
+    <div class="outputs">
+      <div class="output-card">
+        <span class="badge-format" style="color:var(--blue);border-color:var(--blue)">JSON</span>
+        <h3>For tooling.</h3>
+        <p>Full structured payload. Pipe through <code class="inline">jq</code>, feed into a CI gate, store in a database. Schema is stable and additive.</p>
+        <pre class="preview">{
+  "qualityScore": 96,
+  "grade": "A",
+  "gitRisk": {
+    "available": true,
+    "window_days": 90,
+    "top_risk_files": [...]
+  }
+}</pre>
+      </div>
+      <div class="output-card">
+        <span class="badge-format" style="color:var(--orange);border-color:var(--orange)">HTML</span>
+        <h3>For humans.</h3>
+        <p>Themed (dark/light), interactive charts, risk-level badges, embedded favicon. Single self-contained file — share by email if you want.</p>
+        <pre class="preview">&lt;html data-theme="dark"&gt;
+  &lt;link rel="icon" type="image/svg+xml"
+        href="data:image/svg+xml;base64,…"&gt;
+  …
+&lt;/html&gt;</pre>
+      </div>
+      <div class="output-card">
+        <span class="badge-format" style="color:var(--green);border-color:var(--green)">Markdown</span>
+        <h3>For PRs.</h3>
+        <p>Drop into a GitHub issue, Slack snippet, or design doc. Same sections as the HTML report, in plain Markdown tables.</p>
+        <pre class="preview"># Code Scanner Report
+
+## Summary
+| Metric | Value |
+| --- | --- |
+| Grade | **A** (96/100) |
+| Files | 23 |</pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- Predictive risk -->
+  <section id="risk" class="section">
+    <p class="section-eyebrow">How it predicts</p>
+    <h2 class="section-title">Predictive risk, in one formula.</h2>
+    <p class="section-lede">Past fix density is the strongest predictor of future fixes. The score amplifies recent churn × complexity by the share of bug-fix commits and the cost of multi-author coordination.</p>
+
+    <div class="formula-card">
+      <p class="formula">
+        <span class="var">recent_churn</span> × <span class="var">complexity</span> × (1 + 2·<span class="var">bug_fix_ratio</span>) × (1 + 0.15·<span class="var">authors</span>) / 100
+      </p>
+      <p class="formula-note">Default window: last 90 days. Bug-fix detection scans commit subjects for <code class="inline">fix|bug|hotfix|patch|revert</code>.</p>
+    </div>
+
+    <div class="signal-grid">
+      <div class="signal">
+        <div class="name">recent_churn</div>
+        <div class="desc">Lines added + deleted in the window. Captures activity, not historical bulk.</div>
+      </div>
+      <div class="signal">
+        <div class="name">complexity</div>
+        <div class="desc">Average cyclomatic complexity in the file — proxy for cognitive load.</div>
+      </div>
+      <div class="signal">
+        <div class="name">bug_fix_ratio</div>
+        <div class="desc">Share of recent commits whose subjects look like bug fixes. Doubles its impact.</div>
+      </div>
+      <div class="signal">
+        <div class="name">authors</div>
+        <div class="desc">Distinct contributors. Soft amplifier — coordination cost grows with crowd size.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Skill -->
+  <section id="skill" class="section">
+    <p class="section-eyebrow">Claude Code skill</p>
+    <h2 class="section-title">qlint-refactor — close the loop.</h2>
+    <p class="section-lede">A packaged skill that turns the scanner into a feedback signal. The agent picks the riskiest file, proposes a behavior-preserving refactor, re-scans, and verifies the score dropped.</p>
+
+    <div class="skill-flow">
+      <div class="skill-step"><div class="num">1</div><div class="what">Baseline via <code class="inline">risk_top.py</code> — the top-N risk JSON.</div></div>
+      <div class="skill-step"><div class="num">2</div><div class="what">Locate the worst function inside the top-1 file.</div></div>
+      <div class="skill-step"><div class="num">3</div><div class="what">Propose a minimal, behavior-preserving refactor.</div></div>
+      <div class="skill-step"><div class="num">4</div><div class="what">Apply, then <code class="inline">verify.py</code> against the baseline.</div></div>
+      <div class="skill-step"><div class="num">5</div><div class="what">Roll back on no-improve. Exit when top-5 are all under 50.</div></div>
+    </div>
+
+    <p class="section-lede" style="margin-top: 32px; margin-bottom: 12px;">Activates on prompts like</p>
+    <div class="activation">
+      <span class="phrase">list top risk files</span>
+      <span class="phrase">explain why this file is risky</span>
+      <span class="phrase">refactor the risky code</span>
+      <span class="phrase">reduce risk score</span>
+      <span class="phrase">run the risk loop</span>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div>
+      <a href="https://github.com/ropean/qlint" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://pypi.org/project/qlint/" target="_blank" rel="noopener">PyPI</a>
+      <a href="https://github.com/ropean/qlint/blob/main/README.md" target="_blank" rel="noopener">README</a>
+    </div>
+    <div>qlint — multi-language code quality scanner</div>
+  </footer>
+
+</div>
+
+<script>
+document.querySelector('.theme-toggle').addEventListener('click', () => {
+  const cur = document.documentElement.getAttribute('data-theme') || 'dark';
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try { localStorage.setItem('qlint-theme', next); } catch(e) {}
+});
+
+document.querySelectorAll('.copy-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const text = btn.getAttribute('data-copy') || '';
+    try {
+      await navigator.clipboard.writeText(text);
+      const orig = btn.textContent;
+      btn.textContent = 'Copied';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1200);
+    } catch(e) {
+      btn.textContent = 'Press Cmd+C';
+    }
+  });
+});
+</script>
+</body>
+</html>
