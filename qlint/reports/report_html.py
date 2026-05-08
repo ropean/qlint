@@ -14,6 +14,20 @@ _FAVICON_SVG = (
 FAVICON_DATA = "data:image/svg+xml;base64," + base64.b64encode(_FAVICON_SVG).decode()
 
 
+def _fmt_int(n) -> str:
+    try:
+        return f"{int(n):,}"
+    except (TypeError, ValueError):
+        return str(n)
+
+
+def _fmt_float(n) -> str:
+    try:
+        return f"{float(n):,.2f}"
+    except (TypeError, ValueError):
+        return str(n)
+
+
 CSS = """
 *,*::before,*::after { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
@@ -256,18 +270,18 @@ def _files_table(files: list[dict]) -> str:
     for f in top:
         sc = len(f.get("security_issues", []))
         sec_cell = (
-            f'<td class="right"><span class="badge critical">{sc}</span></td>'
+            f'<td class="right"><span class="badge critical">{_fmt_int(sc)}</span></td>'
             if sc
-            else f'<td class="right">{sc}</td>'
+            else f'<td class="right">{_fmt_int(sc)}</td>'
         )
         rows += (
             f"<tr>"
             f'<td class="mono">{f["relative_path"]}</td>'
             f"<td>{f['language']}</td>"
-            f'<td class="right">{f["metrics"]["loc"]:,}</td>'
-            f'<td class="right">{f["metrics"]["functions"]}</td>'
-            f'<td class="right">{f.get("complexity", {}).get("avg_complexity", 0)}</td>'
-            f'<td class="right">{len(f.get("smells", []))}</td>'
+            f'<td class="right">{_fmt_int(f["metrics"]["loc"])}</td>'
+            f'<td class="right">{_fmt_int(f["metrics"]["functions"])}</td>'
+            f'<td class="right">{_fmt_float(f.get("complexity", {}).get("avg_complexity", 0))}</td>'
+            f'<td class="right">{_fmt_int(len(f.get("smells", [])))}</td>'
             f"{sec_cell}"
             f"</tr>"
         )
@@ -301,13 +315,13 @@ def _complexity_table(files: list[dict]) -> str:
         if not max_c:
             continue
         cls = "critical" if max_c > 15 else "high" if max_c > 10 else "low"
-        badge = f'<span class="badge {cls}">{max_c}</span>'
+        badge = f'<span class="badge {cls}">{_fmt_int(max_c)}</span>'
         rows += (
             f"<tr>"
             f'<td class="mono">{f["relative_path"]}</td>'
             f"<td>{f['language']}</td>"
             f'<td class="center">{badge}</td>'
-            f'<td class="right">{f.get("complexity", {}).get("flagged_count", 0)}</td>'
+            f'<td class="right">{_fmt_int(f.get("complexity", {}).get("flagged_count", 0))}</td>'
             f"</tr>"
         )
     body = rows or '<tr><td colspan="4" class="empty">No high complexity detected</td></tr>'
@@ -388,12 +402,12 @@ def _risk_table(analysis: dict) -> str:
             f"<tr>"
             f'<td class="mono">{f["file"]}{reason_html}</td>'
             f'<td><span class="badge {level}">{level}</span></td>'
-            f'<td class="right" style="font-weight:600">{f["risk_score"]}</td>'
-            f'<td class="right">{s.get("recent_commits", f.get("commits", 0))}</td>'
-            f'<td class="right">{s.get("recent_churn", f.get("churn", 0))}</td>'
-            f'<td class="right">{s.get("bug_fix_ratio", 0)}</td>'
-            f'<td class="right">{f.get("authors", 1)}</td>'
-            f'<td class="right">{f.get("complexity", 0)}</td>'
+            f'<td class="right" style="font-weight:600">{_fmt_float(f["risk_score"])}</td>'
+            f'<td class="right">{_fmt_int(s.get("recent_commits", f.get("commits", 0)))}</td>'
+            f'<td class="right">{_fmt_int(s.get("recent_churn", f.get("churn", 0)))}</td>'
+            f'<td class="right">{_fmt_float(s.get("bug_fix_ratio", 0))}</td>'
+            f'<td class="right">{_fmt_int(f.get("authors", 1))}</td>'
+            f'<td class="right">{_fmt_float(f.get("complexity", 0))}</td>'
             f"<td>{bar}</td>"
             f"</tr>"
         )
@@ -523,6 +537,18 @@ document.querySelector('.theme-toggle').addEventListener('click', () => {{
   try {{ localStorage.setItem('qlint-theme', next); }} catch(e) {{}}
   buildCharts();
 }});
+
+document.querySelectorAll('.scan-time').forEach(el => {{
+  const utc = el.getAttribute('datetime');
+  if (!utc) return;
+  const d = new Date(utc);
+  if (isNaN(d.getTime())) return;
+  el.textContent = d.toLocaleString(undefined, {{
+    year: 'numeric', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+    timeZoneName: 'short'
+  }});
+}});
 </script>
 """
 
@@ -533,6 +559,12 @@ def generate_html(analysis: dict, output_path: str = None) -> str:
     dup = analysis.get("duplicates", {})
     files = analysis["files"]
     cd = _prepare_chart_data(analysis)
+    scan_utc = analysis.get("scan_utc", "")
+    scan_fallback = (
+        scan_utc.replace("T", " ").replace("+00:00", "").rstrip() + " UTC"
+        if scan_utc
+        else ""
+    )
 
     html = (
         '<!DOCTYPE html><html lang="en"><head>'
@@ -549,7 +581,12 @@ def generate_html(analysis: dict, output_path: str = None) -> str:
         '<header class="hero"><div>'
         "<h1>Code Quality Report</h1>"
         f'<div class="root">{analysis["root"]}</div>'
-        "</div>"
+        + (
+            f'<div class="meta">Scanned <time class="scan-time" datetime="{scan_utc}">{scan_fallback}</time></div>'
+            if scan_utc
+            else ""
+        )
+        + "</div>"
         '<button class="theme-toggle" type="button" aria-label="Toggle theme">'
         '<svg class="icon sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>'
         '<svg class="icon moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>'
@@ -561,16 +598,16 @@ def generate_html(analysis: dict, output_path: str = None) -> str:
         '<div class="kpis">'
         f'<div class="kpi grade"><div class="label">Quality Grade</div>'
         f'<div class="value"><span class="grade-letter {grade_cls}">{quality["grade"]}</span>'
-        f'<span class="grade-score">{quality["score"]}/100</span></div>'
+        f'<span class="grade-score">{_fmt_int(quality["score"])}/100</span></div>'
         f'<div class="sub">overall</div></div>'
         f'<div class="kpi"><div class="label">Total Files</div>'
-        f'<div class="value">{analysis["total_files"]:,}</div>'
+        f'<div class="value">{_fmt_int(analysis["total_files"])}</div>'
         f'<div class="sub">scanned</div></div>'
         f'<div class="kpi"><div class="label">Total Lines</div>'
-        f'<div class="value">{analysis["total_lines"]:,}</div>'
+        f'<div class="value">{_fmt_int(analysis["total_lines"])}</div>'
         f'<div class="sub">across all files</div></div>'
         f'<div class="kpi"><div class="label">Security</div>'
-        f'<div class="value">{analysis.get("total_security_issues", 0)}</div>'
+        f'<div class="value">{_fmt_int(analysis.get("total_security_issues", 0))}</div>'
         f'<div class="sub">issues found</div></div>'
         "</div></section>"
         # Charts
@@ -583,9 +620,9 @@ def generate_html(analysis: dict, output_path: str = None) -> str:
         # Duplication
         '<section class="section"><h2 class="section-title">Duplication</h2>'
         '<div class="card"><div class="dup-grid">'
-        f'<div class="dup-stat"><div class="v" style="color:var(--orange)">{dup.get("total_duplicate_blocks", 0)}</div><div class="l">Duplicate Blocks</div></div>'
-        f'<div class="dup-stat"><div class="v" style="color:var(--orange)">{dup.get("duplication_percentage", 0)}%</div><div class="l">Duplication Rate</div></div>'
-        f'<div class="dup-stat"><div class="v">{analysis.get("total_smells", 0)}</div><div class="l">Code Smells</div></div>'
+        f'<div class="dup-stat"><div class="v" style="color:var(--orange)">{_fmt_int(dup.get("total_duplicate_blocks", 0))}</div><div class="l">Duplicate Blocks</div></div>'
+        f'<div class="dup-stat"><div class="v" style="color:var(--orange)">{_fmt_float(dup.get("duplication_percentage", 0))}%</div><div class="l">Duplication Rate</div></div>'
+        f'<div class="dup-stat"><div class="v">{_fmt_int(analysis.get("total_smells", 0))}</div><div class="l">Code Smells</div></div>'
         "</div></div></section>"
         # Tables
         '<section class="section"><h2 class="section-title">Inventory</h2>'

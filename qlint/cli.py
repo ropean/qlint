@@ -7,6 +7,7 @@ import platform
 import subprocess
 import sys
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 from qlint import __version__
@@ -36,7 +37,7 @@ def make_output_dir(target_path: str) -> str:
     dirname = os.path.basename(abs_path.rstrip("/\\")) or "scan"
     slug = "".join(c if c.isalnum() or c in "-" else "_" for c in dirname).strip("_")
     short_hash = hashlib.sha1(abs_path.encode()).hexdigest()[:7]
-    out_dir = os.path.join(_results_dir(), f"{slug}_{short_hash}")
+    out_dir = os.path.join(_results_dir(), f"{slug}-{short_hash}")
     os.makedirs(out_dir, exist_ok=True)
     return out_dir
 
@@ -55,6 +56,7 @@ def open_file(path: str) -> None:
 
 
 def scan(root: str, verbose: bool = False, risk_window_days: int = 90) -> dict:
+    started = datetime.now(timezone.utc)
     print(f"Scanning: {root}", file=sys.stderr)
     raw_files = walk_codebase(root)
     print(f"Found {len(raw_files)} files", file=sys.stderr)
@@ -105,6 +107,8 @@ def scan(root: str, verbose: bool = False, risk_window_days: int = 90) -> dict:
             "flagged_count": flagged,
             "avg_complexity": round(avg_c, 2),
         },
+        "scan_utc": started.isoformat(timespec="seconds"),
+        "scan_date_label": started.strftime("%m%d%y"),
     }
     analysis["quality"] = calculate_quality_score(analysis)
     return analysis
@@ -313,9 +317,10 @@ examples:
     formats = _select_formats(args)
 
     out_dir = make_output_dir(target)
-    json_path = str(Path(args.output).expanduser().resolve()) if args.output else os.path.join(out_dir, "report.json")
-    html_path = str(Path(args.html).expanduser().resolve()) if args.html else os.path.join(out_dir, "report.html")
-    md_path = str(Path(args.md).expanduser().resolve()) if args.md else os.path.join(out_dir, "report.md")
+    suffix = f"-{analysis.get('scan_date_label', '')}" if analysis.get("scan_date_label") else ""
+    json_path = str(Path(args.output).expanduser().resolve()) if args.output else os.path.join(out_dir, f"report{suffix}.json")
+    html_path = str(Path(args.html).expanduser().resolve()) if args.html else os.path.join(out_dir, f"report{suffix}.html")
+    md_path = str(Path(args.md).expanduser().resolve()) if args.md else os.path.join(out_dir, f"report{suffix}.md")
     risk_md_path = (
         str(Path(args.risk_md).expanduser().resolve()) if args.risk_md else None
     )
