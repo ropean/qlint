@@ -108,7 +108,7 @@ def scan(root: str, verbose: bool = False, risk_window_days: int = 90) -> dict:
             "avg_complexity": round(avg_c, 2),
         },
         "scan_utc": started.isoformat(timespec="seconds"),
-        "scan_date_label": started.strftime("%m%d%y"),
+        "scan_date_label": started.astimezone().strftime("%m%d%y-%H%M"),
     }
     analysis["quality"] = calculate_quality_score(analysis)
     return analysis
