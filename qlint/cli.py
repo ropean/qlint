@@ -19,6 +19,9 @@ from qlint.core.security import scan_security
 from qlint.core.duplicates import find_duplicates
 from qlint.core.quality import calculate_quality_score
 from qlint.core.git_risk import analyze_git_risk
+from qlint.core.bus_factor import analyze_bus_factor
+from qlint.core.repo_health import analyze_repo_health
+from qlint.core.markers import analyze_markers, summarize_markers
 from qlint.reports.report_json import generate_json
 from qlint.reports.report_html import generate_html
 from qlint.reports.report_md import generate_md
@@ -69,15 +72,20 @@ def scan(root: str, verbose: bool = False, risk_window_days: int = 90) -> dict:
         af["complexity"] = analyze_complexity(af)
         af["smells"] = analyze_smells(af)
         af["security_issues"] = scan_security(af)
+        af["markers"] = analyze_markers(af)
         analyzed.append(af)
 
     print("Running duplication analysis...", file=sys.stderr)
     duplicates = find_duplicates(analyzed)
 
+    abs_root = os.path.abspath(root)
     print("Analyzing git risk...", file=sys.stderr)
-    git_risk_summary = analyze_git_risk(
-        os.path.abspath(root), analyzed, window_days=risk_window_days
-    )
+    git_risk_summary = analyze_git_risk(abs_root, analyzed, window_days=risk_window_days)
+    print("Analyzing bus factor...", file=sys.stderr)
+    bus_factor = analyze_bus_factor(abs_root, analyzed)
+    print("Checking repo health...", file=sys.stderr)
+    repo_health = analyze_repo_health(abs_root)
+    markers_summary = summarize_markers(analyzed)
 
     languages: dict = defaultdict(lambda: {"files": 0, "lines": 0})
     for f in analyzed:
@@ -109,6 +117,9 @@ def scan(root: str, verbose: bool = False, risk_window_days: int = 90) -> dict:
         },
         "scan_utc": started.isoformat(timespec="seconds"),
         "scan_date_label": started.astimezone().strftime("%m%d%y-%H%M"),
+        "markers": markers_summary,
+        "repo_health": repo_health,
+        "bus_factor": bus_factor,
     }
     analysis["quality"] = calculate_quality_score(analysis)
     return analysis

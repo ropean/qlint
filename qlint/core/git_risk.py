@@ -16,7 +16,10 @@ def _is_git_repo(root: str) -> bool:
     return out.strip() == "true"
 
 
-def _parse_git_log(root: str, window_days: int) -> dict[str, dict]:
+def parse_git_log(root: str, window_days: int) -> dict[str, dict]:
+    """Single git log pass.  Each entry exposes commit/churn (recent + all-time)
+    and a {author: commits} map per file so consumers like bus-factor analysis
+    can derive contributor distribution without a second git invocation."""
     out = _run(
         [
             "git",
@@ -65,7 +68,7 @@ def _parse_git_log(root: str, window_days: int) -> dict[str, dict]:
             {
                 "all_commits": 0,
                 "all_churn": 0,
-                "authors": set(),
+                "authors": {},
                 "recent_commits": 0,
                 "recent_churn": 0,
                 "bug_fix_commits": 0,
@@ -73,13 +76,17 @@ def _parse_git_log(root: str, window_days: int) -> dict[str, dict]:
         )
         s["all_commits"] += 1
         s["all_churn"] += churn
-        s["authors"].add(cur_author)
+        s["authors"][cur_author] = s["authors"].get(cur_author, 0) + 1
         if cur_in_window:
             s["recent_commits"] += 1
             s["recent_churn"] += churn
             if cur_is_fix:
                 s["bug_fix_commits"] += 1
     return stats
+
+
+def is_git_repo(root: str) -> bool:
+    return _is_git_repo(root)
 
 
 def _risk_score(
@@ -135,7 +142,7 @@ def analyze_git_risk(
             "top_risk_files": [],
         }
 
-    git_stats = _parse_git_log(root, window_days)
+    git_stats = parse_git_log(root, window_days)
 
     for af in analyzed_files:
         rel = Path(af["relative_path"]).as_posix()
@@ -149,7 +156,7 @@ def analyze_git_risk(
             recent_churn = 0
             bug_fix_commits = 0
         else:
-            authors = len(gs["authors"])
+            authors = len(gs["authors"]) if isinstance(gs["authors"], dict) else len(gs["authors"])
             all_commits = gs["all_commits"]
             all_churn = gs["all_churn"]
             recent_commits = gs["recent_commits"]

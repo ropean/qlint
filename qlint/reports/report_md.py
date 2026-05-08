@@ -125,6 +125,72 @@ def _git_risk(analysis: dict) -> str:
     return _section("Predictive Risk — Top Files", body.rstrip())
 
 
+def _markers(analysis: dict) -> str:
+    summary = analysis.get("markers", {})
+    total = summary.get("total", 0)
+    if total == 0:
+        return _section("Markers", "_No TODO / FIXME / HACK / BUG / NOTE markers found._")
+    by_type = summary.get("by_type", {})
+    top_files = summary.get("top_files", [])
+    by_type_line = ", ".join(f"**{t}** {c}" for t, c in by_type.items()) or "—"
+    body = f"Total: **{total}** · {by_type_line}\n\n"
+    if top_files:
+        body += "| File | Markers | Breakdown |\n| --- | ---: | --- |\n"
+        for f in top_files[:10]:
+            breakdown = ", ".join(
+                f"{t}·{c}" for t, c in f.get("types", {}).items()
+            )
+            body += f"| `{f['file']}` | {f['count']} | {breakdown} |\n"
+    return _section("Markers — TODO / FIXME / HACK / BUG", body.rstrip())
+
+
+def _repo_health(analysis: dict) -> str:
+    rh = analysis.get("repo_health", {})
+    if not rh:
+        return ""
+    score = rh.get("score", 0)
+    required_score = rh.get("required_score", 0)
+    body = (
+        f"**Score:** {score}/100  \n"
+        f"**Required passing:** {required_score}%  \n"
+        f"**Passed:** {rh.get('passed_count', 0)} of {rh.get('total_count', 0)}\n\n"
+        "| Check | Category | Status | Found |\n| --- | --- | --- | --- |\n"
+    )
+    for c in rh.get("checks", []):
+        status = "✓ found" if c["passed"] else "✗ missing"
+        found = c.get("found") or "—"
+        body += f"| {c['name']} | {c.get('category', 'n/a')} | {status} | `{found}` |\n"
+    return _section("Repo Health", body.rstrip())
+
+
+def _bus_factor(analysis: dict) -> str:
+    bf = analysis.get("bus_factor", {})
+    if not bf.get("available"):
+        return ""
+    factor = bf.get("repo_bus_factor", 0)
+    coverage = int(bf.get("coverage_target", 0.5) * 100)
+    threshold = int(bf.get("single_author_threshold", 0.8) * 100)
+    body = (
+        f"**Bus factor:** {factor} authors cover {coverage}% of commits  \n"
+        f"**Total authors:** {bf.get('total_authors', 0)}  \n"
+        f"**Total commits:** {bf.get('total_commits', 0)}\n\n"
+        "### Top contributors\n\n"
+        "| Author | Commits | Share |\n| --- | ---: | ---: |\n"
+    )
+    for a in bf.get("top_authors", []):
+        body += f"| `{a['author']}` | {a['commits']} | {a['share'] * 100:.1f}% |\n"
+    sa = bf.get("single_author_files", [])
+    if sa:
+        body += f"\n### Single-author files (≥ {threshold}% by one author)\n\n"
+        body += "| File | Top author | Share | Commits |\n| --- | --- | ---: | ---: |\n"
+        for f in sa:
+            body += (
+                f"| `{f['file']}` | `{f['top_author']}` | "
+                f"{f['share'] * 100:.0f}% | {f['commits']} |\n"
+            )
+    return _section("Bus Factor", body.rstrip())
+
+
 def generate_md(analysis: dict, output_path: str = None) -> str:
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     md = (
@@ -137,7 +203,10 @@ def generate_md(analysis: dict, output_path: str = None) -> str:
         + _top_files(analysis["files"])
         + _high_complexity(analysis["files"])
         + _security(analysis["files"])
+        + _markers(analysis)
+        + _repo_health(analysis)
         + _git_risk(analysis)
+        + _bus_factor(analysis)
     ).rstrip() + "\n"
     if output_path:
         with open(output_path, "w") as fh:

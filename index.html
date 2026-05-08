@@ -351,8 +351,8 @@ pip install -e .</pre>
   <!-- Features -->
   <section id="features" class="section">
     <p class="section-eyebrow">Analysis features</p>
-    <h2 class="section-title">Five signals, one grade.</h2>
-    <p class="section-lede">Every scan combines five independent analyses into a single quality score from 0 to 100. Each signal has its own report section.</p>
+    <h2 class="section-title">Eight signals, one grade.</h2>
+    <p class="section-lede">Every scan combines eight independent analyses into a single quality score from 0 to 100. Each signal has its own report section.</p>
     <div class="grid-features">
       <div class="card">
         <span class="tag complexity">Complexity</span>
@@ -378,6 +378,21 @@ pip install -e .</pre>
         <span class="tag risk">Predictive Risk</span>
         <h3>Files most likely to break</h3>
         <p>Recency-weighted risk that fuses static metrics with git history — recent churn, bug-fix ratio, author count.</p>
+      </div>
+      <div class="card">
+        <span class="tag complexity">Markers</span>
+        <h3>What the code admits</h3>
+        <p>TODO / FIXME / HACK / XXX / BUG / NOTE counts, broken down by type, ranked by file. The debt your code already confesses.</p>
+      </div>
+      <div class="card">
+        <span class="tag duplication">Repo Health</span>
+        <h3>What's missing</h3>
+        <p>LICENSE, README, CI config, tests dir, package metadata, CHANGELOG, CONTRIBUTING. Required vs recommended, with a single hygiene score.</p>
+      </div>
+      <div class="card">
+        <span class="tag security">Bus Factor</span>
+        <h3>Who'd you lose first?</h3>
+        <p>Minimum authors covering 50% of commits + per-file single-author warnings. Risk isn't only in the code — it's in who knows it.</p>
       </div>
       <div class="card">
         <span class="tag skill">Skill</span>

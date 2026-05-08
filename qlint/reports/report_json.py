@@ -28,6 +28,7 @@ def generate_json(analysis: dict, output_path: str = None) -> str:
                 },
                 "smells": f.get("smells", []),
                 "security_issues": f.get("security_issues", []),
+                "markers": f.get("markers", []),
                 "git_risk": f.get("git_risk", {}),
             }
             for f in analysis["files"]
@@ -41,6 +42,10 @@ def generate_json(analysis: dict, output_path: str = None) -> str:
         "qualityScore": analysis["quality"]["score"],
         "grade": analysis["quality"]["grade"],
         "gitRisk": analysis.get("git_risk_summary", {"available": False, "top_risk_files": []}),
+        "markers": analysis.get("markers", {"total": 0, "by_type": {}, "top_files": [], "samples": []}),
+        "repoHealth": analysis.get("repo_health", {"score": 0, "checks": []}),
+        "busFactor": analysis.get("bus_factor", {"available": False}),
+        "scanUtc": analysis.get("scan_utc"),
     }
 
     json_str = json.dumps(report, indent=2)

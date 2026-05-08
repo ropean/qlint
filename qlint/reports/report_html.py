@@ -373,6 +373,172 @@ def _security_table(files: list[dict]) -> str:
     )
 
 
+_MARKER_CLASS = {
+    "TODO":  "high",
+    "FIXME": "critical",
+    "HACK":  "critical",
+    "XXX":   "critical",
+    "BUG":   "critical",
+    "NOTE":  "medium",
+}
+
+
+def _markers_section(analysis: dict) -> str:
+    summary = analysis.get("markers", {})
+    total = summary.get("total", 0)
+    by_type = summary.get("by_type", {})
+    top_files = summary.get("top_files", [])
+    if total == 0:
+        return (
+            '<div class="card has-table">'
+            "<h3>Markers — TODO / FIXME / HACK / BUG</h3>"
+            '<div class="empty">No markers found. Either pristine — or no one is admitting anything yet.</div>'
+            "</div>"
+        )
+    badges = " ".join(
+        f'<span class="badge {_MARKER_CLASS.get(t, "medium")}">{t} {_fmt_int(c)}</span>'
+        for t, c in by_type.items()
+    )
+    rows = ""
+    for f in top_files:
+        types_html = " ".join(
+            f'<span class="badge {_MARKER_CLASS.get(t, "medium")}">{t}·{_fmt_int(c)}</span>'
+            for t, c in f.get("types", {}).items()
+        )
+        rows += (
+            f"<tr>"
+            f'<td class="mono">{f["file"]}</td>'
+            f'<td class="right" style="font-weight:600">{_fmt_int(f["count"])}</td>'
+            f'<td>{types_html}</td>'
+            f"</tr>"
+        )
+    head = (
+        "<tr>"
+        "<th>File</th>"
+        '<th class="right">Markers</th>'
+        "<th>Breakdown</th>"
+        "</tr>"
+    )
+    return (
+        '<div class="card has-table">'
+        "<h3>Markers — TODO / FIXME / HACK / BUG</h3>"
+        f'<div style="padding:0 22px 16px;display:flex;gap:8px;flex-wrap:wrap">{badges}</div>'
+        f'<div class="table-wrap"><table><thead>{head}</thead><tbody>{rows}</tbody></table></div>'
+        "</div>"
+    )
+
+
+def _repo_health_section(analysis: dict) -> str:
+    rh = analysis.get("repo_health", {})
+    if not rh:
+        return ""
+    score = rh.get("score", 0)
+    required_score = rh.get("required_score", 0)
+    passed = rh.get("passed_count", 0)
+    total = rh.get("total_count", 0)
+    checks = rh.get("checks", [])
+
+    rows = ""
+    for c in checks:
+        cls = "low" if c["passed"] else (
+            "critical" if c.get("category") == "required" else "medium"
+        )
+        status = "✓ found" if c["passed"] else "✗ missing"
+        found = c.get("found")
+        detail = found if found else (
+            "tried: " + ", ".join(c.get("candidates", [])[:4])
+            + ("…" if len(c.get("candidates", [])) > 4 else "")
+        )
+        rows += (
+            f"<tr>"
+            f"<td>{c['name']}</td>"
+            f"<td><span class=\"badge {cls}\">{c.get('category', 'n/a')}</span></td>"
+            f"<td><span class=\"badge {'low' if c['passed'] else 'critical'}\">{status}</span></td>"
+            f'<td class="mono" style="font-size:12px;color:var(--text-muted)">{detail}</td>'
+            f"</tr>"
+        )
+    head = (
+        "<tr>"
+        "<th>Check</th><th>Category</th><th>Status</th>"
+        "<th>Found / Candidates</th>"
+        "</tr>"
+    )
+    return (
+        '<div class="card has-table">'
+        "<h3>Repo Health</h3>"
+        f'<div style="padding:0 22px 16px;color:var(--text-muted);font-size:13px">'
+        f'<span style="font-family:Iowan Old Style,serif;font-size:42px;line-height:1;letter-spacing:-0.02em;color:var(--text)">{_fmt_int(score)}</span>'
+        f'<span style="margin:0 8px">/ 100</span>'
+        f'<span style="margin-left:16px">required: <strong style="color:var(--text)">{_fmt_int(required_score)}%</strong></span>'
+        f'<span style="margin-left:16px">passed {_fmt_int(passed)} of {_fmt_int(total)}</span>'
+        "</div>"
+        f'<div class="table-wrap"><table><thead>{head}</thead><tbody>{rows}</tbody></table></div>'
+        "</div>"
+    )
+
+
+def _bus_factor_section(analysis: dict) -> str:
+    bf = analysis.get("bus_factor", {})
+    if not bf.get("available"):
+        return ""
+    factor = bf.get("repo_bus_factor", 0)
+    total_authors = bf.get("total_authors", 0)
+    total_commits = bf.get("total_commits", 0)
+    coverage = int(bf.get("coverage_target", 0.5) * 100)
+    top_authors = bf.get("top_authors", [])
+    single_files = bf.get("single_author_files", [])
+    threshold = int(bf.get("single_author_threshold", 0.8) * 100)
+
+    if factor <= 1:
+        level = "critical"
+    elif factor == 2:
+        level = "high"
+    else:
+        level = "low"
+    level_grade = {"critical": "F", "high": "D", "low": "A"}[level]
+
+    author_rows = "".join(
+        f"<tr>"
+        f'<td class="mono">{a["author"]}</td>'
+        f'<td class="right">{_fmt_int(a["commits"])}</td>'
+        f'<td class="right">{_fmt_float(a["share"] * 100)}%</td>'
+        f"</tr>"
+        for a in top_authors
+    )
+    sa_rows = "".join(
+        f"<tr>"
+        f'<td class="mono">{f["file"]}</td>'
+        f'<td class="mono" style="font-size:12px">{f["top_author"]}</td>'
+        f'<td class="right">{_fmt_float(f["share"] * 100)}%</td>'
+        f'<td class="right">{_fmt_int(f["commits"])}</td>'
+        f"</tr>"
+        for f in single_files
+    ) or '<tr><td colspan="4" class="empty">No single-author files (every file has shared ownership).</td></tr>'
+
+    return (
+        '<div class="card has-table">'
+        "<h3>Bus Factor</h3>"
+        f'<div style="padding:0 22px 16px;color:var(--text-muted);font-size:13px;display:flex;align-items:baseline;gap:24px;flex-wrap:wrap">'
+        f'<div><span class="grade-{level_grade}" style="font-family:Iowan Old Style,serif;font-size:56px;line-height:1;letter-spacing:-0.025em">{_fmt_int(factor)}</span>'
+        f'<span style="margin-left:8px">authors cover {coverage}%</span></div>'
+        f'<div>of {_fmt_int(total_authors)} total</div>'
+        f'<div>{_fmt_int(total_commits)} commits</div>'
+        f'<div><span class="badge {level}">{level}</span></div>'
+        "</div>"
+        '<div style="padding:0 22px 8px;font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;font-weight:600">Top contributors</div>'
+        '<div class="table-wrap"><table>'
+        '<thead><tr><th>Author</th><th class="right">Commits</th><th class="right">Share</th></tr></thead>'
+        f"<tbody>{author_rows}</tbody>"
+        "</table></div>"
+        f'<div style="padding:16px 22px 8px;font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;font-weight:600">Single-author files (≥ {threshold}% by one author)</div>'
+        '<div class="table-wrap"><table>'
+        '<thead><tr><th>File</th><th>Top author</th><th class="right">Share</th><th class="right">Commits</th></tr></thead>'
+        f"<tbody>{sa_rows}</tbody>"
+        "</table></div>"
+        "</div>"
+    )
+
+
 def _risk_table(analysis: dict) -> str:
     summary = analysis.get("git_risk_summary", {})
     if not summary.get("available"):
@@ -634,8 +800,17 @@ def generate_html(analysis: dict, output_path: str = None) -> str:
         '<section class="section"><h2 class="section-title">Security</h2>'
         + _security_table(files)
         + "</section>"
+        '<section class="section"><h2 class="section-title">Markers</h2>'
+        + _markers_section(analysis)
+        + "</section>"
+        '<section class="section"><h2 class="section-title">Repo Health</h2>'
+        + _repo_health_section(analysis)
+        + "</section>"
         '<section class="section"><h2 class="section-title">Predictive Risk</h2>'
         + _risk_table(analysis)
+        + "</section>"
+        '<section class="section"><h2 class="section-title">Bus Factor</h2>'
+        + _bus_factor_section(analysis)
         + "</section>"
         "</div>"  # /shell
         + _chart_script(cd)
