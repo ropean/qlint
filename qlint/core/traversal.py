@@ -62,6 +62,29 @@ def detect_language(path: str) -> str:
     return LANGUAGE_MAP.get(ext, "Unknown")
 
 
+def _anchor_pattern(stripped: str, prefix: str) -> str:
+    """Anchor a sub-directory .gitignore pattern relative to the repo root."""
+    if stripped.startswith("!"):
+        return "!" + prefix + "/" + stripped[1:].lstrip("/")
+    return prefix + "/" + stripped.lstrip("/")
+
+
+def _read_gitignore_lines(gi_path: Path, rel_dir: Path) -> list[str]:
+    try:
+        text = gi_path.read_text(encoding="utf-8", errors="replace")
+    except (PermissionError, OSError):
+        return []
+    is_root = str(rel_dir) == "."
+    prefix = "" if is_root else str(PurePosixPath(rel_dir))
+    out: list[str] = []
+    for raw in text.splitlines():
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        out.append(stripped if is_root else _anchor_pattern(stripped, prefix))
+    return out
+
+
 def _load_gitignore_spec(root: Path) -> pathspec.PathSpec:
     """Collect all .gitignore patterns from root and every subdirectory."""
     lines: list[str] = []
@@ -69,28 +92,10 @@ def _load_gitignore_spec(root: Path) -> pathspec.PathSpec:
         dirnames[:] = [
             d for d in dirnames if d not in IGNORE_DIRS and not d.startswith(".")
         ]
-        if ".gitignore" in filenames:
-            gi_path = Path(dirpath) / ".gitignore"
-            try:
-                rel_dir = Path(dirpath).relative_to(root)
-                for raw in gi_path.read_text(
-                    encoding="utf-8", errors="replace"
-                ).splitlines():
-                    stripped = raw.strip()
-                    if not stripped or stripped.startswith("#"):
-                        continue
-                    # Anchor sub-directory patterns so they match relative to the repo root.
-                    if str(rel_dir) != ".":
-                        # Only anchor patterns that aren't already negations with a leading slash.
-                        prefix = str(PurePosixPath(rel_dir))
-                        if stripped.startswith("!"):
-                            lines.append("!" + prefix + "/" + stripped[1:].lstrip("/"))
-                        else:
-                            lines.append(prefix + "/" + stripped.lstrip("/"))
-                    else:
-                        lines.append(stripped)
-            except (PermissionError, OSError):
-                continue
+        if ".gitignore" not in filenames:
+            continue
+        rel_dir = Path(dirpath).relative_to(root)
+        lines.extend(_read_gitignore_lines(Path(dirpath) / ".gitignore", rel_dir))
     return pathspec.PathSpec.from_lines("gitwildmatch", lines)
 
 

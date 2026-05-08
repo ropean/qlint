@@ -1,0 +1,38 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]" || pip install -e .
+
+      - name: Lint
+        run: |
+          pip install ruff
+          ruff check qlint/
+
+      - name: Smoke scan (self-scan)
+        run: |
+          qlint . --no-open --format json --output /tmp/qlint.json
+          python -c "import json,sys; d=json.load(open('/tmp/qlint.json')); g=d['grade']; s=d['qualityScore']; print(f'grade={g} score={s}'); sys.exit(0 if s>=60 else 1)"
