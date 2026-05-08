@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qlint"
-version = "0.2.1"
+version = "0.3.0"
 description = "Multi-language code quality scanner — complexity, duplication, security, and smells"
 readme = "README.md"
 requires-python = ">=3.11"
