@@ -14,6 +14,23 @@ cd qlint
 pip install -e .
 ```
 
+### Using uv
+
+```bash
+# as a standalone CLI tool (from PyPI)
+uv tool install qlint
+
+# run without installing
+uvx qlint /path/to/repo
+
+# from source
+git clone https://github.com/ropean/qlint.git
+cd qlint
+uv tool install --editable .
+# or, inside a uv-managed project
+uv add qlint
+```
+
 ## Usage
 
 ```bash
