@@ -50,6 +50,6 @@ def generate_json(analysis: dict, output_path: str = None) -> str:
 
     json_str = json.dumps(report, indent=2)
     if output_path:
-        with open(output_path, "w") as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write(json_str)
     return json_str

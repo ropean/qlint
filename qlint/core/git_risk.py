@@ -7,7 +7,10 @@ BUG_FIX_PATTERN = re.compile(r"\b(fix|bug|hotfix|patch|revert)\b", re.IGNORECASE
 
 
 def _run(cmd: list[str], cwd: str) -> str:
-    result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=60)
+    result = subprocess.run(
+        cmd, cwd=cwd, capture_output=True, text=True, timeout=60,
+        encoding="utf-8", errors="replace",
+    )
     return result.stdout if result.returncode == 0 else ""
 
 

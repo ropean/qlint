@@ -72,6 +72,6 @@ def generate_risk_md(analysis: dict, output_path: str = None) -> str:
                     )
         md = header + body
     if output_path:
-        with open(output_path, "w") as fh:
+        with open(output_path, "w", encoding="utf-8") as fh:
             fh.write(md.rstrip() + "\n")
     return md
