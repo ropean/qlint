@@ -1,16 +1,16 @@
 .PHONY: build lint format install
 
 install:
-	pip install -e ".[dev]"
+	uv sync --extra dev
 
 format:
-	ruff format qlint
+	uv run ruff format qlint
 
 lint:
-	ruff check qlint
+	uv run ruff check qlint
 
 build:
-	python -m build
+	uv run --with build python -m build
 
 publish: build
-	twine upload dist/*
+	uv run --with twine twine upload dist/*
