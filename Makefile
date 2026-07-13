@@ -10,7 +10,7 @@ lint:
 	ruff check qlint
 
 build:
-	python3 -m build
+	python -m build
 
 publish: build
 	twine upload dist/*

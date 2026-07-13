@@ -160,7 +160,7 @@ The `.claude/skills/qlint-refactor/` directory ships a Claude Code skill that tu
 make install   # pip install -e ".[dev]"
 make lint      # ruff check
 make format    # ruff format
-make build     # python3 -m build
+make build     # python -m build
 ```
 
 ## Requirements

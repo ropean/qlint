@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """Compact top-N risk JSON for the qlint-refactor skill loop."""
 import argparse
 import json

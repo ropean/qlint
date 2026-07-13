@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """Verify a single file's risk_score against a baseline for qlint-refactor."""
 import argparse
 import json
